@@ -39,10 +39,13 @@ var HAS_NONCE = [
 ];
 
 module.exports = function csp(options) {
+  console.log('options', options);
 
   options = _.clone(options) || { 'default-src': ["'self'"] };
+  console.log('setAllHeaders1', options.setAllHeaders);
   var reportOnly = options.reportOnly || false;
   var setAllHeaders = options.setAllHeaders || false;
+  console.log('setAllHeaders2', setAllHeaders);
   var safari5 = options.safari5 || false;
   var nonceFallback = options.nonceFallback || false;
 
@@ -147,7 +150,7 @@ module.exports = function csp(options) {
       }
     }
 
-    console.log('setAllHeaders', setAllHeaders);
+    console.log('setAllHeaders3', setAllHeaders);
     switch (browser.name) {
 
       case 'IE':
@@ -263,7 +266,7 @@ module.exports = function csp(options) {
         setAllHeaders = true;
 
     }
-    console.log('setAllHeaders', setAllHeaders);
+    console.log('setAllHeaders4', setAllHeaders);
 
     var policyString = _.map(policy, function (value, key) {
       if ((key === 'sandbox') && (value === true)) {
