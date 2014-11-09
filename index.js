@@ -111,6 +111,8 @@ module.exports = function csp(options) {
 
     var browser = platform.parse(req.headers['user-agent']);
     var version = parseFloat(browser.version);
+    console.log(req.headers['user-agent']);
+    console.log(browser, version);
 
     DIRECTIVES.forEach(function (directive) {
       var value = options[directive];
