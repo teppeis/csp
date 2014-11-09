@@ -44,6 +44,7 @@ module.exports = function csp(options) {
   var reportOnly = options.reportOnly || false;
   var setAllHeaders = options.setAllHeaders || false;
   var safari5 = options.safari5 || false;
+  var nonceFallback = options.nonceFallback || false;
 
   DIRECTIVES.forEach(function (directive) {
     var cameledKey = camelize(directive);
@@ -114,7 +115,8 @@ module.exports = function csp(options) {
     DIRECTIVES.forEach(function (directive) {
       var value = options[directive];
       if ((value !== null) && (value !== undefined)) {
-        policy[directive] = value;
+        // clone
+        policy[directive] = Array.isArray(value) ? value.slice() : value;
       }
     });
 
@@ -137,6 +139,9 @@ module.exports = function csp(options) {
           }
         }
         sourceList[idx] = "'nonce-" + res.locals.cspNonce + "'";
+        if (nonceFallback && sourceList.indexOf("'unsafe-inline'") === -1) {
+          sourceList.push("'unsafe-inline'");
+        }
       }
     }
 
@@ -161,20 +166,30 @@ module.exports = function csp(options) {
 
         headers.push('Content-Security-Policy');
 
+        if (version >= 31 && nonceFallback) {
+          // Firefox 31+ supports nonce-value, but the fallback system is broken.
+          // https://bugzilla.mozilla.org/show_bug.cgi?id=1004703
+          _(policy).each(function(sourceList, directive) {
+            var nonceCount = sourceList.filter(function(value) {
+              return /^'nonce-.*'$/.test(value);
+            }).length;
+            if (nonceCount > 0) {
+              policy[directive] = sourceList.filter(function(source) {
+                return source !== "'unsafe-inline'";
+              });
+            }
+          });
+        }
+
       } else if ((version >= 4) && (version < 23)) {
 
         headers.push('X-Content-Security-Policy');
 
         policy['default-src'] = policy['default-src'] || ['*'];
 
-        Object.keys(options).forEach(function (key) {
+        Object.keys(policy).forEach(function (key) {
 
-          var value = options[key];
-          if (Array.isArray(value)) {
-            // Clone the array so we don't later mutate `options` by mistake
-            value = value.slice();
-          }
-
+          var value = policy[key];
           if (key === 'connect-src') {
             policy['xhr-src'] = value;
           } else if (key === 'default-src') {

@@ -49,6 +49,14 @@ describe('csp middleware', function () {
       string: 'Mozilla/5.0 (Windows NT 6.2; rv:22.0) Gecko/20130405 Firefox/23.0',
       header: 'Content-Security-Policy'
     },
+    'Firefox 30': {
+      string: 'Mozilla/5.0 (Windows NT 6.2; rv:22.0) Gecko/20130405 Firefox/30.0',
+      special: true
+    },
+    'Firefox 31': {
+      string: 'Mozilla/5.0 (Windows NT 6.2; rv:22.0) Gecko/20130405 Firefox/31.0',
+      special: true
+    },
     'Chrome 24': {
       string: 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.60 Safari/537.17',
       header: 'X-WebKit-CSP'
@@ -406,5 +414,51 @@ describe('csp middleware', function () {
       .end(done);
     });
 
+    it('does not remove unsafe-inline for Firefox 31 by default', function (done) {
+      var app = useCsp({ 'script-src': "'nonce' 'unsafe-inline'"});
+
+      request(app).get('/').set('User-Agent', AGENTS['Firefox 31'].string)
+      .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+      .expect('nonce: abcde1')
+      .end(done);
+    });
+
+    context('when "nonceFallback" enabled', function() {
+      it('sets the nonce header with unsafe-inline', function (done) {
+        var app = useCsp({ 'script-src': "'nonce'", nonceFallback: true });
+
+        request(app).get('/')
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+
+      it('outputs unsafe-inline for Firefox 30', function (done) {
+        var app = useCsp({ 'script-src': "'nonce'", nonceFallback: true });
+
+        request(app).get('/').set('User-Agent', AGENTS['Firefox 30'].string)
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+
+      it('does not output unsafe-inline for Firefox 31', function (done) {
+        var app = useCsp({ 'script-src': "'nonce'", nonceFallback: true });
+
+        request(app).get('/').set('User-Agent', AGENTS['Firefox 31'].string)
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+
+      it('does not duplicate unsafe-inline', function (done) {
+        var app = useCsp({ 'script-src': "'nonce' 'unsafe-inline'", nonceFallback: true });
+
+        request(app).get('/')
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+    });
   });
 });
