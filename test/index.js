@@ -1,4 +1,5 @@
 var csp = require('..');
+var nonceUtil = require('../nonce');
 
 var _ = require('underscore');
 var connect = require('connect');
@@ -47,6 +48,14 @@ describe('csp middleware', function () {
     'Firefox 23': {
       string: 'Mozilla/5.0 (Windows NT 6.2; rv:22.0) Gecko/20130405 Firefox/23.0',
       header: 'Content-Security-Policy'
+    },
+    'Firefox 30': {
+      string: 'Mozilla/5.0 (Windows NT 6.2; rv:22.0) Gecko/20130405 Firefox/30.0',
+      special: true
+    },
+    'Firefox 31': {
+      string: 'Mozilla/5.0 (Windows NT 6.2; rv:22.0) Gecko/20130405 Firefox/31.0',
+      special: true
     },
     'Chrome 24': {
       string: 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.60 Safari/537.17',
@@ -127,19 +136,7 @@ describe('csp middleware', function () {
     .expect('X-Content-Security-Policy', /default-src 'self' domain.com/)
     .expect('Content-Security-Policy', /default-src 'self' domain.com/)
     .expect('X-WebKit-CSP', /default-src 'self' domain.com/)
-    .end(function(err) {
-      if (err) {
-        return done(err);
-      }
-      // unknown browser doesn't affect the next request
-      request(app).get('/').set('User-Agent', AGENTS['Chrome 27'].string)
-      .expect('Content-Security-Policy', /default-src 'self' domain.com/)
-      .expect(function(res) {
-        assert(!res.get('X-Content-Security-Policy'));
-        assert(!res.get('X-WebKit-CSP'));
-      })
-      .end(done);
-    });
+    .end(done);
   });
 
   it('sets the report-only headers', function (done) {
@@ -173,7 +170,7 @@ describe('csp middleware', function () {
       csp({ 'default-src': 'self' });
     }, Error);
     assert.throws(function() {
-      csp({ 'default-src': 'self unsafe-inline' });
+      csp({ 'default-src': 'nonce' });
     }, Error);
   });
 
@@ -333,4 +330,135 @@ describe('csp middleware', function () {
     assert.equal(csp().name, 'csp');
   });
 
+  describe('nonce', function() {
+    var originalGenerator, generateCount;
+
+    beforeEach(function() {
+      originalGenerator = nonceUtil.generateNonceValue;
+      nonceUtil.generateNonceValue = function() {
+        return 'abcde' + String(++generateCount);
+      };
+
+      generateCount = 0;
+    });
+
+    afterEach(function() {
+      nonceUtil.generateNonceValue = originalGenerator;
+    });
+
+    function useCsp(policy) {
+      var app = connect();
+      app.use(csp(policy));
+      app.use(function(req, res, next) {
+        assert(res.locals, 'res.locals should be set');
+        res.end('nonce: ' + res.locals.cspNonce);
+      });
+      return app;
+    }
+
+    it('sets the nonce header', function (done) {
+      var app = useCsp({ 'script-src': "'nonce'" });
+
+      request(app).get('/')
+      .expect('Content-Security-Policy', "script-src 'nonce-abcde1'")
+      .expect('nonce: abcde1')
+      .end(done);
+    });
+
+    it('sets the nonce header for multiple directives', function (done) {
+      var app = useCsp({
+        'default-src': "'nonce'",
+        'script-src': "'nonce'",
+        'style-src': "'nonce'"
+      });
+
+      request(app).get('/')
+      .expect('Content-Security-Policy', /default-src 'nonce-abcde1'/)
+      .expect('Content-Security-Policy', /script-src 'nonce-abcde1'/)
+      .expect('Content-Security-Policy', /style-src 'nonce-abcde1'/)
+      .expect('nonce: abcde1')
+      .end(done);
+    });
+
+    it('throws an error when non-supported directives have nonce', function () {
+      assert.throws(function() {
+        csp({ 'img-src': "'nonce'" });
+      }, Error);
+      assert.throws(function() {
+        csp({ 'img-src': ["'nonce'"] });
+      }, Error);
+    });
+
+    it('throws an error when multiple nonce are specified in a directive', function () {
+      assert.throws(function() {
+        csp({ 'script-src': ["'nonce'", "'nonce'"] });
+      }, Error);
+      assert.throws(function() {
+        csp({ 'script-src': "'nonce' 'nonce'" });
+      }, Error);
+    });
+
+    it('throws an error when crypto fail to generate random bytes', function (done) {
+      var msg = 'fail to generate random bytes';
+      nonceUtil.generateNonceValue = function() {
+        throw new Error(msg);
+      };
+      var app = useCsp({ 'script-src': "'nonce'" });
+      app.use(function(err, req, res, next){
+        res.statusCode = 500;
+        res.end(err.toString());
+      });
+
+      request(app).get('/')
+      .expect(500, new RegExp(msg))
+      .end(done);
+    });
+
+    it('does not remove unsafe-inline for Firefox 31 by default', function (done) {
+      var app = useCsp({ 'script-src': "'nonce' 'unsafe-inline'"});
+
+      request(app).get('/').set('User-Agent', AGENTS['Firefox 31'].string)
+      .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+      .expect('nonce: abcde1')
+      .end(done);
+    });
+
+    context('when "nonceFallback" enabled', function() {
+      it('sets the nonce header with unsafe-inline', function (done) {
+        var app = useCsp({ 'script-src': "'nonce'", nonceFallback: true });
+
+        request(app).get('/')
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+
+      it('outputs unsafe-inline for Firefox 30', function (done) {
+        var app = useCsp({ 'script-src': "'nonce'", nonceFallback: true });
+
+        request(app).get('/').set('User-Agent', AGENTS['Firefox 30'].string)
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+
+      it('does not output unsafe-inline for Firefox 31', function (done) {
+        var app = useCsp({ 'script-src': "'nonce'", nonceFallback: true });
+
+        request(app).get('/').set('User-Agent', AGENTS['Firefox 31'].string)
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+
+      it('does not duplicate unsafe-inline', function (done) {
+        var app = useCsp({ 'script-src': "'nonce' 'unsafe-inline'", nonceFallback: true });
+
+        request(app).get('/')
+        .expect('Content-Security-Policy', "script-src 'nonce-abcde1' 'unsafe-inline'")
+        .expect('nonce: abcde1')
+        .end(done);
+      });
+    });
+  });
 });

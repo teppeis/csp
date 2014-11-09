@@ -2,6 +2,8 @@ var _ = require('underscore');
 var camelize = require('camelize');
 var platform = require('platform');
 
+var nonceUtil = require('./nonce');
+
 var ALL_HEADERS = [
   'X-Content-Security-Policy',
   'Content-Security-Policy',
@@ -26,7 +28,14 @@ var MUST_BE_QUOTED = [
   'none',
   'self',
   'unsafe-inline',
-  'unsafe-eval'
+  'unsafe-eval',
+  'nonce'
+];
+
+var HAS_NONCE = [
+  'default-src',
+  'script-src',
+  'style-src'
 ];
 
 module.exports = function csp(options) {
@@ -35,6 +44,7 @@ module.exports = function csp(options) {
   var reportOnly = options.reportOnly || false;
   var setAllHeaders = options.setAllHeaders || false;
   var safari5 = options.safari5 || false;
+  var nonceFallback = options.nonceFallback || false;
 
   DIRECTIVES.forEach(function (directive) {
     // Normalize camelCase to spinal-case
@@ -70,8 +80,21 @@ module.exports = function csp(options) {
         throw new Error(value + ' must be quoted');
       }
     });
+
+    // Check nonce-value
+    var nonceCount = value.filter(function(src) {
+      return src === "'nonce'";
+    }).length;
+    if (nonceCount === 1) {
+      if (HAS_NONCE.indexOf(directive) === -1) {
+        throw new Error("'nonce' should not be in '" + directive + "' directive");
+      }
+    } else if (nonceCount === 2) {
+      throw new Error("multiple 'nonce' specified. Specify just one for each directive");
+    }
   });
 
+  // check report-only and report-uri
   if (reportOnly && !options['report-uri']) {
     throw new Error('Please remove reportOnly or add a report-uri.');
   }
@@ -93,6 +116,32 @@ module.exports = function csp(options) {
       }
     });
 
+    // Generate nonce-value
+    for (var i = 0; i < HAS_NONCE.length; i++) {
+      var sourceList = policy[HAS_NONCE[i]];
+      if (!sourceList) {
+        continue;
+      }
+      var idx = sourceList.indexOf("'nonce'");
+      if (idx !== -1) {
+        if (!res.locals) {
+          // Init res.locals for pure connect (witout express) environment
+          res.locals = Object.create(null);
+        }
+        if (!res.locals.cspNonce) {
+          try {
+            res.locals.cspNonce = nonceUtil.generateNonceValue();
+          } catch (failToGenerateRandomError) {
+            return next(failToGenerateRandomError);
+          }
+        }
+        sourceList[idx] = "'nonce-" + res.locals.cspNonce + "'";
+        if (nonceFallback && sourceList.indexOf("'unsafe-inline'") === -1) {
+          sourceList.push("'unsafe-inline'");
+        }
+      }
+    }
+
     switch (browser.name) {
       case 'IE':
         if (version >= 10) {
@@ -110,6 +159,21 @@ module.exports = function csp(options) {
       case 'Firefox':
         if (version >= 23) {
           headers.push('Content-Security-Policy');
+          if (version >= 31 && nonceFallback) {
+            // Firefox 31+ supports for nonce-value, but the fallback system is broken.
+            // Remove unsafe-inline to enable nonce-value.
+            // https://bugzilla.mozilla.org/show_bug.cgi?id=1004703
+            _(policy).each(function(sourceList, directive) {
+              var nonceCount = sourceList.filter(function(value) {
+                return /^'nonce-.*'$/.test(value);
+              }).length;
+              if (nonceCount > 0) {
+                policy[directive] = sourceList.filter(function(source) {
+                  return source !== "'unsafe-inline'";
+                });
+              }
+            });
+          }
         } else if ((version >= 4) && (version < 23)) {
           headers.push('X-Content-Security-Policy');
 
