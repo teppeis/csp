@@ -1,4 +1,5 @@
 var csp = require('..');
+var nonceUtil = require('../nonce');
 
 var _ = require('underscore');
 var connect = require('connect');
@@ -160,6 +161,9 @@ describe('csp middleware', function () {
     assert.throws(function() {
       csp({ 'default-src': 'self' });
     }, Error);
+    assert.throws(function() {
+      csp({ 'default-src': 'nonce' });
+    }, Error);
   });
 
   it('throws an error reportOnly is true and there is no report-uri', function () {
@@ -318,4 +322,86 @@ describe('csp middleware', function () {
     assert.equal(csp().name, 'csp');
   });
 
+  describe('nonce', function() {
+    var originalGenerator, generateCount;
+
+    beforeEach(function() {
+      originalGenerator = nonceUtil.generateNonceValue;
+      nonceUtil.generateNonceValue = function() {
+        return 'abcde' + String(++generateCount);
+      };
+
+      generateCount = 0;
+    });
+
+    afterEach(function() {
+      nonceUtil.generateNonceValue = originalGenerator;
+    });
+
+    function useCsp(policy) {
+      var app = connect();
+      app.use(csp(policy));
+      app.use(function(req, res, next) {
+        assert(res.locals, 'res.locals should be set');
+        res.end('nonce: ' + res.locals.cspNonce);
+      });
+      return app;
+    }
+
+    it('sets the nonce header', function (done) {
+      var app = useCsp({ 'script-src': "'nonce'" });
+
+      request(app).get('/')
+      .expect('Content-Security-Policy', "script-src 'nonce-abcde1'")
+      .expect('nonce: abcde1')
+      .end(done);
+    });
+
+    it('sets the nonce header for multiple directives', function (done) {
+      var app = useCsp({
+        'default-src': "'nonce'",
+        'script-src': "'nonce'",
+        'style-src': "'nonce'"
+      });
+
+      request(app).get('/')
+      .expect('Content-Security-Policy', /default-src 'nonce-abcde1'/)
+      .expect('Content-Security-Policy', /script-src 'nonce-abcde1'/)
+      .expect('Content-Security-Policy', /style-src 'nonce-abcde1'/)
+      .expect('nonce: abcde1')
+      .end(done);
+    });
+
+    it('throws an error when non-supported directives have nonce', function () {
+      assert.throws(function() {
+        csp({ 'image-src': "'nonce'" });
+      }, Error);
+      assert.throws(function() {
+        csp({ 'image-src': ["'nonce'"] });
+      }, Error);
+    });
+
+    it('throws an error when multiple nonce are specified in a directive', function () {
+      assert.throws(function() {
+        csp({ 'script-src': ["'nonce'", "'nonce'"] });
+      }, Error);
+    });
+
+    it('throws an error when crypto fail to generate random bytes', function (done) {
+      var msg = 'fail to generate random bytes';
+      nonceUtil.generateNonceValue = function() {
+        throw new Error(msg);
+      };
+      var app = useCsp({ 'script-src': "'nonce'" });
+      app.use(function(err, req, res, next){
+        res.statusCode = 500;
+        res.end(err.toString());
+      });
+
+      request(app).get('/')
+      .expect(500, new RegExp(msg))
+      .end(done);
+    });
+
+  });
 });

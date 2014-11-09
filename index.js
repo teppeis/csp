@@ -2,6 +2,8 @@ var _ = require('underscore');
 var camelize = require('camelize');
 var platform = require('platform');
 
+var nonceUtil = require('./nonce');
+
 var ALL_HEADERS = [
   'X-Content-Security-Policy',
   'Content-Security-Policy',
@@ -26,7 +28,14 @@ var MUST_BE_QUOTED = [
   'none',
   'self',
   'unsafe-inline',
-  'unsafe-eval'
+  'unsafe-eval',
+  'nonce'
+];
+
+var HAS_NONCE = [
+  'default-src',
+  'script-src',
+  'style-src'
 ];
 
 module.exports = function csp(options) {
@@ -44,22 +53,40 @@ module.exports = function csp(options) {
         throw new Error(directive + ' and ' + cameledKey + ' specified. Specify just one.');
       }
       options[directive] = cameledValue;
+      delete options[cameledKey];
     }
   });
 
-  _.each(options, function (value) {
+  _.each(options, function (value, directive) {
     if (Array.isArray(value)) {
       MUST_BE_QUOTED.forEach(function (must) {
         if (value.indexOf(must) !== -1) {
           throw new Error(value + ' must be quoted');
         }
       });
+
+      var nonceCount = value.filter(function(src) {
+        return src === "'nonce'";
+      }).length;
+      if (nonceCount === 1) {
+        if (HAS_NONCE.indexOf(directive) === -1) {
+          throw new Error("'nonce' should not be in '" + directive + "' directive");
+        }
+      } else if (nonceCount === 2) {
+        throw new Error("multiple 'nonce' specified. Specify just one for each directive");
+      }
     } else {
       MUST_BE_QUOTED.forEach(function (must) {
         if (value === must) {
           throw new Error(value + ' must be quoted');
         }
       });
+
+      if (value === "'nonce'") {
+        if (HAS_NONCE.indexOf(directive) === -1) {
+          throw new Error("'nonce' should not be in '" + directive + "' directive");
+        }
+      }
     }
   });
 
@@ -91,6 +118,28 @@ module.exports = function csp(options) {
       }
 
     });
+
+    for (var i = 0; i < HAS_NONCE.length; i++) {
+      var sourceList = policy[HAS_NONCE[i]];
+      if (!sourceList) {
+        continue;
+      }
+      var idx = sourceList.indexOf("'nonce'");
+      if (idx !== -1) {
+        if (!res.locals) {
+          // for pure connect (witout express) environment
+          res.locals = Object.create(null);
+        }
+        if (!res.locals.cspNonce) {
+          try {
+            res.locals.cspNonce = nonceUtil.generateNonceValue();
+          } catch (failToGenerateRandomError) {
+            return next(failToGenerateRandomError);
+          }
+        }
+        sourceList[idx] = "'nonce-" + res.locals.cspNonce + "'";
+      }
+    }
 
     switch (browser.name) {
 
