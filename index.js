@@ -55,6 +55,15 @@ module.exports = function csp(options) {
       options[directive] = cameledValue;
       delete options[cameledKey];
     }
+
+    var value = options[directive];
+    var shouldWrapInArray = (_(value).isString()) && (
+      (directive !== 'sandbox') ||
+      ((directive === 'sandbox') && (value !== true))
+    );
+    if (shouldWrapInArray) {
+      options[directive] = value.split(/\s/g);
+    }
   });
 
   _.each(options, function (value, directive) {
@@ -103,20 +112,10 @@ module.exports = function csp(options) {
     var version = parseFloat(browser.version);
 
     DIRECTIVES.forEach(function (directive) {
-
       var value = options[directive];
       if ((value !== null) && (value !== undefined)) {
         policy[directive] = value;
       }
-
-      var shouldWrapInArray = (_(value).isString()) && (
-        (directive !== 'sandbox') ||
-        ((directive === 'sandbox') && (value !== true))
-      );
-      if (shouldWrapInArray) {
-        policy[directive] = value.split(/\s/g);
-      }
-
     });
 
     for (var i = 0; i < HAS_NONCE.length; i++) {

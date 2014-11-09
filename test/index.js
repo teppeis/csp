@@ -385,6 +385,9 @@ describe('csp middleware', function () {
       assert.throws(function() {
         csp({ 'script-src': ["'nonce'", "'nonce'"] });
       }, Error);
+      assert.throws(function() {
+        csp({ 'script-src': "'nonce' 'nonce'" });
+      }, Error);
     });
 
     it('throws an error when crypto fail to generate random bytes', function (done) {
