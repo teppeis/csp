@@ -24,7 +24,8 @@ app.use(csp({
   reportUri: '/report-violation',
   reportOnly: false, // set to true if you only want to report errors
   setAllHeaders: false, // set to true if you want to set all headers
-  safari5: false // set to true if you want to force buggy CSP in Safari 5
+  safari5: false // set to true if you want to force buggy CSP in Safari 5,
+  nonceFallback: false // set to true if you want to fallback 'nonce' rule
 }));
 ```
 
@@ -33,3 +34,17 @@ You can specify keys in a camel-cased fashion (`imgSrc`) or dashed (`img-src`); 
 There are a lot of inconsistencies in how browsers implement CSP. Helmet sniffs the user-agent of the browser and sets the appropriate header and value for that browser. If no user-agent is matched, it will set _all_ the headers with the 1.0 spec.
 
 *Note*: If you're using the `reportUri` feature and you're using [csurf](https://github.com/expressjs/csurf), you might have errors. [Check this out](https://github.com/expressjs/csurf/issues/20) for a workaround.
+
+## `'nonce'`
+
+```javascript
+var csp = require('helmet-csp');
+app.use(csp({scriptSrc: ["'nonce'"]}));
+app.get('/', function(req, res, next) {
+    console.log(res.locals.cspNonce); // generated random nonce (ex: '7uL+U7WYdsy/9BxOoHz0pAdv/Kk=')
+});
+```
+```
+
+```
+

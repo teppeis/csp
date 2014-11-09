@@ -112,7 +112,7 @@ module.exports = function csp(options) {
     var browser = platform.parse(req.headers['user-agent']);
     var version = parseFloat(browser.version);
     console.log(req.headers['user-agent']);
-    console.log(browser, version);
+    console.log(browser.name, version);
 
     DIRECTIVES.forEach(function (directive) {
       var value = options[directive];
@@ -147,6 +147,7 @@ module.exports = function csp(options) {
       }
     }
 
+    console.log('setAllHeaders', setAllHeaders);
     switch (browser.name) {
 
       case 'IE':
@@ -262,6 +263,7 @@ module.exports = function csp(options) {
         setAllHeaders = true;
 
     }
+    console.log('setAllHeaders', setAllHeaders);
 
     var policyString = _.map(policy, function (value, key) {
       if ((key === 'sandbox') && (value === true)) {
@@ -277,6 +279,7 @@ module.exports = function csp(options) {
       headers = ALL_HEADERS;
     }
 
+    console.log(headers);
     if (policyString) {
       headers.forEach(function (header) {
         var headerName = header;
