@@ -44,7 +44,7 @@ random nonce-value (defined in [CSP 1.1](https://w3c.github.io/webappsec/specs/c
 app.use(csp({
     scriptSrc: "'self' 'nonce'"
 }));
-// [Output header] Content-Security-Policy: script-src 'self' 'nonce-yXKYLnUqXRLv546Ma/cnii0wktg='
+// Content-Security-Policy: script-src 'self' 'nonce-yXKYLnUqXRLv546Ma/cnii0wktg='
 app.get('/', function(req, res, next) {
   console.log(res.locals.cspNonce); // you can get a random nonce value (ex: "yXKYLnUqXRLv546Ma/cnii0wktg=")
   res.render('index'); // and you can use `cspNonce` variable in your templates
@@ -66,7 +66,7 @@ app.use(csp({
     scriptSrc: "'self' 'nonce'",
     nonceFallback: true
 }));
-// [Output header] Content-Security-Policy: script-src 'self' 'nonce-yXKYLnUqXRLv546Ma/cnii0wktg=' 'unsafe-inline'
+// Content-Security-Policy: script-src 'self' 'nonce-yXKYLnUqXRLv546Ma/cnii0wktg=' 'unsafe-inline'
 ```
 
 However, [Firefox 31+ puts `'unsafe-inline'` ahead of nonce-value.](https://bugzilla.mozilla.org/show_bug.cgi?id=1004703 "1004703 – Tweak nonce- and hash-source interaction with unsafe-inline")
